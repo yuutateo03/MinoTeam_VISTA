@@ -6,6 +6,7 @@ from .sam.src.sam3_model import Sam3Model
 from .yoloe import YOLOEVista
 from .yolo import YOLOVista
 from .rtdetr import RTDETRVista
+from .locate_anything import LocateAnythingWrapper
 
 MODEL_ZOO = {
     "moondream": MoonDream,
@@ -14,6 +15,7 @@ MODEL_ZOO = {
     "yoloe": YOLOEVista,
     "yolo": YOLOVista,
     "rtdetr": RTDETRVista,
+    "locate_anything": LocateAnythingWrapper,
 }
 
 
