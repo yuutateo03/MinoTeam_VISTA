@@ -18,7 +18,6 @@ from vista.pipeline.project_pipeline import LightweightPipelineLocate
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger(__name__)
 
-
 def generate_mock_frame(frame_idx: int) -> Image.Image:
     """Generate a mock frame with a moving box to simulate trackable motion."""
     frame_bgr = np.zeros((640, 640, 3), dtype=np.uint8)
@@ -39,7 +38,6 @@ def generate_mock_frame(frame_idx: int) -> Image.Image:
     # Convert BGR back to RGB for PIL as expected by the pipeline
     frame_rgb = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2RGB)
     return Image.fromarray(frame_rgb)
-
 
 def run_benchmark(video_path: str = None, num_frames: int = 100):
     logger.info("Initializing Tracker Benchmark...")
@@ -89,14 +87,14 @@ def run_benchmark(video_path: str = None, num_frames: int = 100):
                     bb_height = y2 - y1
 
                     writer.writerow([
-                        frame_idx,  # 1-based frame index
-                        det.track_id,  # Persistent ID
-                        f"{x1:.2f}",  # bb_left
-                        f"{y1:.2f}",  # bb_top
-                        f"{bb_width:.2f}",  # bb_width
-                        f"{bb_height:.2f}",  # bb_height
-                        f"{det.confidence:.4f}",  # conf
-                        "-1", "-1", "-1"  # x, y, z (ignored in 2D MOT)
+                        frame_idx,             # 1-based frame index
+                        det.track_id,          # Persistent ID
+                        f"{x1:.2f}",           # bb_left
+                        f"{y1:.2f}",           # bb_top
+                        f"{bb_width:.2f}",     # bb_width
+                        f"{bb_height:.2f}",    # bb_height
+                        f"{det.confidence:.4f}", # conf
+                        "-1", "-1", "-1"       # x, y, z (ignored in 2D MOT)
                     ])
 
     # Cleanup
@@ -116,9 +114,7 @@ def run_benchmark(video_path: str = None, num_frames: int = 100):
         logger.info(f"ACCEPTANCE MET: Average FPS is {avg_fps:.2f} (Target: ≥5 FPS).")
     else:
         logger.warning(f"ACCEPTANCE FAILED: Average FPS is {avg_fps:.2f} (Target: ≥5 FPS).")
-        logger.info(
-            "Plan to improve: Use smaller YOLO variant (e.g., YOLO11n), scale down input resolution, or enable TensorRT/Half-precision (FP16) inference.")
-
+        logger.info("Plan to improve: Use smaller YOLO variant (e.g., YOLO11n), scale down input resolution, or enable TensorRT/Half-precision (FP16) inference.")
 
 if __name__ == "__main__":
     # You can pass a real video path here, e.g., run_benchmark("data/sequences/accident.mp4", 100)
