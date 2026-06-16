@@ -42,6 +42,8 @@ def generate_csv():
     # Start the timer for FPS calculation
     start_time = time.time()
     
+    writer_tracks = CSVWriter(f"{out_dir}/predictions_tracks.csv")
+
     # 4. Run the pipeline and save real tracking data
     for result in pipeline.process_video(video_path):
         frame_id = result.frame_idx
@@ -64,12 +66,23 @@ def generate_csv():
                     conf=det.confidence,
                     category=det.category
                 )
-                
+            
         # Log progress and FPS every 30 frames
         if frame_id > 0 and frame_id % 30 == 0:
             elapsed_time = time.time() - start_time
             fps = frame_id / elapsed_time
             logger.info(f"Processed {frame_id} frames in {elapsed_time:.2f}s (Processing Speed: {fps:.1f} FPS)")
+
+    # NUOVO: 5. Salvataggio della Track History (Captioning Finale)
+    logger.info("Generating Final Track Captions and saving to predictions_tracks.csv...")
+    for track_id, history in pipeline.track_history.items():
+        writer_tracks.append_row(
+            video_id=video_id,
+            track_id=track_id,
+            frame_start=history["frame_start"],
+            frame_end=history["frame_end"],
+            caption=history["final_caption"] if history["final_caption"] else "normal"
+        )
 
     # Final Summary Log
     total_time = time.time() - start_time
