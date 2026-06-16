@@ -14,7 +14,7 @@ from ultralytics import YOLO
 
 from .base import VistaPipeline, FrameResult, Detection
 from .helpers import crop_track_with_padding
-from vista.models.caption_wrapper import VideoCaptioner  # Nuovo Import
+from vista.models.caption_wrapper import VideoCaptioner 
 
 logger = logging.getLogger(__name__)
 
@@ -42,10 +42,10 @@ class LightweightPipelineLocate(VistaPipeline):
         self.nms_iou_threshold = nms_iou_threshold
         self.caption_buffer_size = caption_buffer_size
         
-        # Inizializza il modello di Captioning
+        # Initialize the VideoCaptioner for heuristic captioning
         self.captioner = VideoCaptioner(model_name="heuristic")
 
-        # Gestione della memoria per i crop e l'intero ciclo di vita delle tracce
+        # Manage of track buffers and history for captioning
         self._track_buffers = defaultdict(list)
         self.track_history = {}  # Conterrà i dati per predictions_tracks.csv
 
@@ -118,7 +118,7 @@ class LightweightPipelineLocate(VistaPipeline):
         for det in final_detections:
             tid = det.track_id
             if tid is not None:
-                # Se è una nuova traccia, inizializza la history
+                # If it's a new track, initialize its history
                 if tid not in self.track_history:
                     self.track_history[tid] = {
                         "frame_start": frame_idx, "frame_end": frame_idx, 
@@ -131,13 +131,13 @@ class LightweightPipelineLocate(VistaPipeline):
                 if det.caption:
                     self.track_history[tid]["locate_tags"].append(det.caption)
 
-                # Buffer del crop
+                # Crop off the track with padding and store in buffer
                 cropped_img = crop_track_with_padding(frame, det.bbox, padding_factor=0.2)
                 self._track_buffers[tid].append((frame_idx, cropped_img))
                 if len(self._track_buffers[tid]) > self.caption_buffer_size:
                     self._track_buffers[tid].pop(0)
 
-                # Calcola dinamicamente la caption se il buffer è pieno o a intervalli
+                # Calculates dynamic caption if buffer is full or at intervals
                 if len(self._track_buffers[tid]) == self.caption_buffer_size:
                     dynamic_caption = self.captioner.generate_caption(
                         frame_buffer=self._track_buffers[tid],
@@ -145,6 +145,6 @@ class LightweightPipelineLocate(VistaPipeline):
                         bbox_history=self.track_history[tid]["bbox_history"]
                     )
                     self.track_history[tid]["final_caption"] = dynamic_caption
-                    det.caption = dynamic_caption  # Assegna al frame corrente per i log/annotazioni
+                    det.caption = dynamic_caption  # Assign to the current frame for logging/annotation
 
         return FrameResult(detections=final_detections, frame_idx=frame_idx)

@@ -31,7 +31,7 @@ locate_anything:
   occlusion_overlap_threshold: 0.2        
   occlusion_ratio_threshold: 0.3          
 
-  # NUOVO: Trigger semantici richiesti dallo script del collega
+  # New: Semantic Triggers
   trigger_classes:
     - "person"
     - "motorcycle"
@@ -50,7 +50,6 @@ locate_anything:
   
   prompt_library_path: "assets/locate_prompts.yaml"
   
-  # I 6 prompt esatti che abbiamo appena definito nell'issue
   active_prompts:
     - "person_injured"
     - "person_running"

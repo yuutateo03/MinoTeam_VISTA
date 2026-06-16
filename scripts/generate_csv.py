@@ -73,7 +73,7 @@ def generate_csv():
             fps = frame_id / elapsed_time
             logger.info(f"Processed {frame_id} frames in {elapsed_time:.2f}s (Processing Speed: {fps:.1f} FPS)")
 
-    # NUOVO: 5. Salvataggio della Track History (Captioning Finale)
+    # New: 5. Save Final Track Captions (Captioning Finale)
     logger.info("Generating Final Track Captions and saving to predictions_tracks.csv...")
     for track_id, history in pipeline.track_history.items():
         writer_tracks.append_row(

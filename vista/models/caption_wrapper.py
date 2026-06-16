@@ -30,8 +30,8 @@ class VideoCaptioner:
         """
         Genera la caption finale per una traccia analizzando il buffer video e i tag raccolti.
         """
-        # 1. Se abbiamo raccolto tag da Locate Anything, usiamo il più frequente (Majority Voting)
-        # Questo soddisfa il requisito: "Leverage Locate Anything prompts for caption assignment"
+        # 1. If we have collected tags from Locate Anything, use the most frequent (Majority Voting)
+        # This satisfies the requirement: "Leverage Locate Anything prompts for caption assignment"
         if locate_tags:
             # Rimuoviamo i 'None' e contiamo le occorrenze
             valid_tags = [tag for tag in locate_tags if tag is not None]
@@ -39,8 +39,8 @@ class VideoCaptioner:
                 most_common_tag = Counter(valid_tags).most_common(1)[0][0]
                 return most_common_tag
 
-        # 2. Heuristic Fallback (Dinamica del movimento)
-        # Se non ci sono tag di Locate Anything, analizziamo come si muove il bounding box
+        # 2. Heuristic Fallback (movement analysis)
+        # If there are no tags from Locate Anything, analyze how the bounding box moves
         if len(bbox_history) >= 2:
             first_box = bbox_history[0]
             last_box = bbox_history[-1]
@@ -51,7 +51,7 @@ class VideoCaptioner:
             
             movement = np.sqrt((c_x2 - c_x1)**2 + (c_y2 - c_y1)**2)
             
-            # Se si è mosso di molti pixel nel buffer, probabile che stia correndo/guidando
+            # If it has moved significantly in the buffer, it's likely running/driving
             if movement > 50.0:
                 return "moving / running"
             else:
