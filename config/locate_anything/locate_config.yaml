@@ -1,142 +1,38 @@
-# Locate Anything Configuration for Lightweight Pipeline
-# ========================================================
-#
-# This config controls selective grounding behavior in LightweightPipelineLocate.
-# Tune these parameters to balance speed (FPS) vs. accuracy (precision/recall).
+# Configuration for pipeline grid search and tuning evaluation
 
-# Detection Configuration
-# =======================
+tuning:
+  # YOLO parameter search space
+  yolo:
+    conf: [0.01, 0.05, 0.1, 0.25]               # Base confidence thresholds
+    iou: [0.3, 0.45, 0.6]                       # Non-Maximum Suppression IoU limits
 
-yolo:
-  model: "yolo12x.pt"  # or yolo11x, yolo8x, etc.
-  conf: 0.05           # YOLO confidence threshold (low → higher recall)
-  iou: 0.45            # YOLO NMS IOU threshold
+  # Locate Anything selective grounding search space
+  locate_anything:
+    conf_threshold: [0.25, 0.35, 0.45]          # VLM confidence filters
+    every_n_frames: [3, 5, 10, 15]              # Temporal sampling rates
+    iou_merge_threshold: [0.3, 0.45, 0.6]       # Spatial fusion NMS thresholds
 
-locate_anything:
-  # Selective Grounding Parameters
-  # ─────────────────────────────────
-  
-  enabled: true                           # Enable/disable Locate Anything
-  every_n_frames: 15                      # Trovato il bilanciamento per >= 5 FPS (era 3, troppo pesante)
-  conf_threshold: 0.35                    # Abbassato per filtrare ombre ma mantenere sensibilità (era 0.45)
-  iou_merge_threshold: 0.45               # Tuning per la fusione YOLO-VLM
-  
-  # Trigger Conditions (optional, beyond every_n_frames)
-  # ────────────────────────────────────────────────────
-  
-  trigger_on_low_yolo_confidence: true
-  yolo_conf_low_threshold: 0.3            
-  
-  trigger_on_occlusion: true
-  occlusion_overlap_threshold: 0.2        
-  occlusion_ratio_threshold: 0.3          
+evaluation:
+  # Reference structures expected from your tracking loop
+  schemas:
+    predictions_mot:
+      - "video_id"
+      - "frame_id"
+      - "track_id"
+      - "x1"
+      - "y1"
+      - "x2"
+      - "y2"
+      - "conf"
+      - "category"
+    predictions_tracks:
+      - "video_id"
+      - "track_id"
+      - "frame_start"
+      - "frame_end"
+      - "caption"
 
-  # New: Semantic Triggers
-  trigger_classes:
-    - "person"
-    - "motorcycle"
-    - "bus"
-  
-  # Model Configuration
-  # ───────────────────
-  
-  model_name: "locate-anything"           
-  device: "cuda"                          
-  batch_prompts: true                     
-  max_prompts_per_call: 6                 
-  
-  # Prompt Library
-  # ──────────────
-  
-  prompt_library_path: "assets/locate_prompts.yaml"
-  
-  active_prompts:
-    - "person_injured"
-    - "person_running"
-    - "person_helping"
-    - "crashed_car"
-    - "emergency_vehicle"
-    - "hazardous_debris"
-
-  prompt_overrides: {}
-  
-# Tracking Configuration
-# ======================
-
-tracker:
-  type: "bytetrack"            # "bytetrack" or "deepsort"
-  track_high_threshold: 0.3    # High threshold for confirmed tracks
-  track_low_threshold: 0.1     # Low threshold for tentative tracks
-  match_threshold: 0.5         # IoU threshold for matching
-  max_age: 30                  # Max frames to keep lost track
-
-# Captioning Configuration
-# ========================
-
-caption:
-  model: "timesformer"          # "timesformer", "slowfast", or "heuristic"
-  buffer_size: 16               # Frames per track to buffer for action recognition
-  caption_stride: 30            # Run caption model every N frames
-  confidence_threshold: 0.5     # Min confidence to assign caption
-
-# Profiling & Logging
-# ===================
-
-profiling:
-  enabled: true                 # Measure timing per stage
-  log_frequency: 30             # Log stats every N frames
-  verbose: false                # Detailed debug logging
-
-output:
-  # CSV Output
-  predictions_mot_path: "predictions_mot.csv"
-  predictions_tracks_path: "predictions_tracks.csv"
-  
-  # Video Annotation
-  annotated_video_path: "annotated.mp4"
-  draw_boxes: true
-  draw_track_ids: true
-  draw_captions: true
-  box_thickness: 2
-  text_scale: 0.6
-
-# Performance Tuning Guidelines
-# ==============================
-#
-# If FPS < 5 (violates constraint):
-#   - Increase locate_every_n (e.g., 3 → 5)
-#   - Reduce active_prompts (use 3–4 instead of 6)
-#   - Decrease yolo_conf (makes YOLO faster but more boxes)
-#   - Use smaller YOLO model (yolo8x instead of yolo12x)
-#   - Enable mixed precision (FP16)
-#
-# If detection precision is low (missing objects):
-#   - Decrease yolo_conf_threshold (0.05 → 0.02)
-#   - Decrease locate_every_n (3 → 2)
-#   - Increase locate_conf_threshold (0.45 → 0.35)
-#   - Add more prompts (injured, emergency, crashed, normal_car)
-#
-# If BERTScore-F1 is low (captions inaccurate):
-#   - Review and refine prompts in locate_prompts.yaml
-#   - Increase caption_stride for better temporal aggregation
-#   - Validate on small labeled subset
-
-# Preset Configurations
-# =====================
-#
-# Use one of these preset configs if tuning from scratch:
-#
-# Preset 1: Speed-optimized (target: >8 FPS)
-#   locate_every_n: 5
-#   active_prompts: [person_injured, emergency_vehicle, crashed_car]
-#   caption_stride: 60
-#
-# Preset 2: Balanced (target: 5–8 FPS)
-#   locate_every_n: 3
-#   active_prompts: [person_injured, person_running, emergency_vehicle, crashed_car]
-#   caption_stride: 30
-#
-# Preset 3: Accuracy-optimized (target: 3–5 FPS, acceptable for analysis)
-#   locate_every_n: 1 or 2
-#   active_prompts: [all]
-#   caption_stride: 15
+  # Target performance and accuracy baselines
+  targets:
+    min_hybrid_fps: 5.0                         # Strict real-time drone processing constraint
+    min_f1_score: 0.75                          # Minimum grounding quality baseline
