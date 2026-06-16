@@ -1,43 +1,38 @@
 # Locate Anything Prompt Library for Accident Scene Analysis
+# Optimized for UAV/Drone top-down perspectives
 
 prompts:
   person_injured:
-    description: "Person sitting or lying down, appears injured after crash"
-    prompt: "person sitting or lying down after a crash, appears injured or distressed"
+    description: "Person lying motionless on the ground or road"
+    prompt: "person lying flat or motionless on the ground, road, or asphalt"
     category: "person"
-    caption: "injured, sitting"
+    caption: "injured, sitting" 
   
   person_running:
-    description: "Person moving quickly or running away from accident"
-    prompt: "person running or walking quickly away from the accident scene"
+    description: "Person in a dynamic running posture away from vehicles"
+    prompt: "person running, sprinting, or moving fast away from the vehicles"
     category: "person"
     caption: "running"
   
   person_helping:
-    description: "Person assisting another person at accident scene"
-    prompt: "person helping another person, assisting or caring for someone"
+    description: "Two or more people clustered tightly, crouching over someone"
+    prompt: "person crouching, kneeling, or leaning over another person on the ground"
     category: "person"
     caption: "helping"
   
   crashed_car:
-    description: "Car with visible damage, collision, or overturned"
-    prompt: "car with visible damage, collision marks, or overturned position"
+    description: "Car with physical deformation, crushed roof, or overturned"
+    prompt: "car with severe structural deformation, smashed windows, or flipped upside down"
     category: "car"
     caption: "crashed"
   
   emergency_vehicle:
-    description: "Ambulance, fire truck, police car, or tow truck responding"
-    prompt: "ambulance, fire truck, police car, or emergency vehicle responding to accident"
+    description: "Ambulance, fire truck, or police car with emergency lights"
+    prompt: "ambulance, fire engine, or police car with roof emergency lights"
     category: "emergency_vehicle"
-    caption: "emergency vehicle"
-  
-  normal_car:
-    description: "Car present but not involved in or damaged by accident"
-    prompt: "car present but not damaged or involved in the accident"
-    category: "car"
-    caption: null
+    caption: "emergency vehicle" 
 
 metadata:
-  version: "1.0"
-  created_at: "2026-06-14"
+  version: "1.2"
+  created_at: "2026-06-16"
   dataset: "CrashVista (UAV accident scenes)"
