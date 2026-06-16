@@ -12,8 +12,15 @@ import cv2
 from PIL import Image
 from ultralytics import YOLO
 
-# Adjust import based on your actual path
-from vista.pipeline.project_pipeline import LightweightPipelineLocate
+import logging
+from pathlib import Path
+from ultralytics import YOLO
+
+import sys
+sys.path.append(str(Path(__file__).resolve().parent.parent))
+
+from vista.pipeline.lightweight_pipeline_locate import LightweightPipelineLocate
+
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger(__name__)
