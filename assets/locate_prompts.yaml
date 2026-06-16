@@ -6,7 +6,7 @@ prompts:
     description: "Person lying motionless on the ground or road"
     prompt: "person lying flat or motionless on the ground, road, or asphalt"
     category: "person"
-    caption: "injured, lying down"
+    caption: "injured, sitting" 
   
   person_running:
     description: "Person in a dynamic running posture away from vehicles"
@@ -18,7 +18,7 @@ prompts:
     description: "Two or more people clustered tightly, crouching over someone"
     prompt: "person crouching, kneeling, or leaning over another person on the ground"
     category: "person"
-    caption: "assisting"
+    caption: "helping"
   
   crashed_car:
     description: "Car with physical deformation, crushed roof, or overturned"
@@ -30,15 +30,9 @@ prompts:
     description: "Ambulance, fire truck, or police car with emergency lights"
     prompt: "ambulance, fire engine, or police car with roof emergency lights"
     category: "emergency_vehicle"
-    caption: "emergency responder"
-  
-  hazardous_debris:
-    description: "Car parts, shattered glass, or fluid spills on the road"
-    prompt: "scattered car parts, heavy debris, or dark fluid spill on the road surface"
-    category: "obstacle"
-    caption: "debris/spill"
+    caption: "emergency vehicle" 
 
 metadata:
-  version: "1.1"
+  version: "1.2"
   created_at: "2026-06-16"
   dataset: "CrashVista (UAV accident scenes)"
