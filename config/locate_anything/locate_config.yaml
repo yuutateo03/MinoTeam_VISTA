@@ -17,47 +17,50 @@ locate_anything:
   # ─────────────────────────────────
   
   enabled: true                           # Enable/disable Locate Anything
-  every_n_frames: 3                       # Call Locate every N frames (lower = more calls, higher latency)
-  conf_threshold: 0.45                    # Min confidence to keep Locate results
-  iou_merge_threshold: 0.4                # NMS IOU when merging YOLO + Locate
+  every_n_frames: 15                      # Trovato il bilanciamento per >= 5 FPS (era 3, troppo pesante)
+  conf_threshold: 0.35                    # Abbassato per filtrare ombre ma mantenere sensibilità (era 0.45)
+  iou_merge_threshold: 0.45               # Tuning per la fusione YOLO-VLM
   
   # Trigger Conditions (optional, beyond every_n_frames)
   # ────────────────────────────────────────────────────
   
   trigger_on_low_yolo_confidence: true
-  yolo_conf_low_threshold: 0.3            # Trigger if any YOLO det has conf < this
+  yolo_conf_low_threshold: 0.3            
   
   trigger_on_occlusion: true
-  occlusion_overlap_threshold: 0.2        # IoU threshold to detect occlusion
-  occlusion_ratio_threshold: 0.3          # Trigger if overlaps > 30% of detections
+  occlusion_overlap_threshold: 0.2        
+  occlusion_ratio_threshold: 0.3          
+
+  # NUOVO: Trigger semantici richiesti dallo script del collega
+  trigger_classes:
+    - "person"
+    - "motorcycle"
+    - "bus"
   
   # Model Configuration
   # ───────────────────
   
-  model_name: "locate-anything"           # Model identifier (from NVIDIA)
-  device: "cuda"                          # "cuda" or "cpu"
-  batch_prompts: true                     # Batch multiple prompts in one call (if supported)
-  max_prompts_per_call: 6                 # Max prompts to batch
+  model_name: "locate-anything"           
+  device: "cuda"                          
+  batch_prompts: true                     
+  max_prompts_per_call: 6                 
   
   # Prompt Library
   # ──────────────
   
   prompt_library_path: "assets/locate_prompts.yaml"
   
-  # Select which prompts to use (subset of all available)
+  # I 6 prompt esatti che abbiamo appena definito nell'issue
   active_prompts:
     - "person_injured"
     - "person_running"
     - "person_helping"
     - "crashed_car"
     - "emergency_vehicle"
-  
-  # Optionally override prompt text at runtime
-  prompt_overrides: {}
-  # Example:
-  # prompt_overrides:
-  #   person_injured: "person seated or lying, appears hurt"
+    - "hazardous_debris"
 
+  prompt_overrides: {}
+  
 # Tracking Configuration
 # ======================
 
