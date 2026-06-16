@@ -1,0 +1,129 @@
+import cv2
+import csv
+import logging
+from pathlib import Path
+from collections import defaultdict
+
+logging.basicConfig(level=logging.INFO, format='%(levelname)s: %(message)s')
+logger = logging.getLogger(__name__)
+
+def load_mot_predictions(csv_path: str) -> dict:
+    """
+    Reads predictions_mot.csv and groups detections by frame_id.
+    Returns a dictionary: { frame_id: [list_of_detections] }
+    """
+
+    predictions = defaultdict(list)
+    try:
+        with open(csv_path, mode='r', newline='', encoding='utf-8') as f:
+            reader = csv.DictReader(f)
+            for row in reader:
+                frame_id = int(row['frame_id'])
+                predictions[frame_id].append({
+                    'track_id': row['track_id'],
+                    'x1': float(row['x1']),
+                    'y1': float(row['y1']),
+                    'x2': float(row['x2']),
+                    'y2': float(row['y2']),
+                    'conf': float(row['conf']),
+                    'category': row['category']
+                })
+        logger.info(f"Loaded predictions for {len(predictions)} frames from CSV.")
+    except Exception as e:
+        logger.error(f"Error reading CSV {csv_path}: {e}")
+    
+    return predictions
+
+def annotate_video(input_video_path: str, csv_path: str, output_video_path: str):
+    """
+    Output a video with bounding boxes and track IDs overlaid, based on the predictions in the CSV.
+    Args:
+        input_video_path (str): Path to the original video.
+        csv_path (str): Path to the predictions_mot.csv file.
+        output_video_path (str): Path where the annotated video will be saved.
+    """
+    out_path = Path(output_video_path)
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+
+    logger.info(f"Opening source video: {input_video_path}")
+    cap = cv2.VideoCapture(input_video_path)
+    if not cap.isOpened():
+        logger.error(f"Unable to open video: {input_video_path}")
+        return
+
+    predictions = load_mot_predictions(csv_path)
+
+    # Takes the properties of the original video to maintain the same format
+    width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+    height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+    fps = cap.get(cv2.CAP_PROP_FPS)
+    total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+
+    # Initialize the VideoWriter (mp4v is the standard codec for mp4 files in OpenCV)
+    fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+    out = cv2.VideoWriter(str(out_path), fourcc, fps, (width, height))
+
+    logger.info(f"Starting annotated video export ({total_frames} frames estimated)...")
+    
+    # Stile UI
+    box_color = (50, 255, 150)  # Green fluo
+    text_color = (0, 0, 0)      # Black for maximum contrast
+    font = cv2.FONT_HERSHEY_SIMPLEX
+
+    frame_idx = 0
+    while True:
+        ret, frame = cap.read()
+        if not ret:
+            break
+
+        # If there are detections for this frame, draw them
+        dets = predictions.get(frame_idx, [])
+        for det in dets:
+            x1, y1 = int(det['x1']), int(det['y1'])
+            x2, y2 = int(det['x2']), int(det['y2'])
+            
+            # Draw the bounding box perimeter
+            cv2.rectangle(frame, (x1, y1), (x2, y2), box_color, 2)
+            
+            # Prepare the label text
+            label = f"ID:{det['track_id']} {det['category'].upper()} {det['conf']:.2f}"
+            (text_width, text_height), baseline = cv2.getTextSize(label, font, 0.5, 1)
+            
+            # Draw the text background for maximum readability
+            cv2.rectangle(frame, (x1, y1 - text_height - 10), (x1 + text_width, y1), box_color, -1)
+            
+            # Draw the text
+            cv2.putText(frame, label, (x1, y1 - 5), font, 0.5, text_color, 1)
+
+        out.write(frame)
+        
+        # Log progress every 100 frames
+        if frame_idx > 0 and frame_idx % 100 == 0:
+            logger.info(f"Processed {frame_idx}/{total_frames} frames...")
+            
+        frame_idx += 1
+
+    cap.release()
+    out.release()
+    logger.info(f"Task completed! Annotated video saved in: {out_path}")
+
+if __name__ == "__main__":
+    # Configurazione dei path
+    input_vid = r"C:\Users\franc\Documents\GitHub\MinoTeam_VISTA\data\VISTADataset\test\20251210\DJI_20251210134636_0001_S.mp4"
+    input_csv = r"C:\Users\franc\Documents\GitHub\MinoTeam_VISTA\out\run_002\predictions_mot.csv" 
+    output_vid = r"C:\Users\franc\Documents\GitHub\MinoTeam_VISTA\out\run_002\annotated.mp4"
+    
+    # 1. Controlliamo il CSV
+    if not Path(input_csv).exists():
+        logger.error(f"Critic Error: CSV not found in {Path(input_csv).resolve()}")
+        exit(1)
+
+    # 2. Controlliamo il Video e stampiamo il percorso esatto in cui Python lo sta cercando
+    video_path_obj = Path(input_vid).resolve()
+    if not video_path_obj.exists():
+        logger.error(f"Critic Error: Video not found in {video_path_obj}")
+        logger.error("Change the 'VISTADataset' folder here, or update the 'input_vid' variable with the correct path.")
+        exit(1)
+        
+    # Se tutto esiste, procediamo!
+    annotate_video(str(video_path_obj), input_csv, output_vid)
