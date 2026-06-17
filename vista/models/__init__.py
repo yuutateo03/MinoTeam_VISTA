@@ -14,10 +14,10 @@ MODEL_ZOO = {
     "sam": Sam3Model,
     "yoloe": YOLOEVista,
     "yolo": YOLOVista,
+    "yolo26": YOLOVista,  # Maps the yolo26 identifier to the standard YOLO wrapper
     "rtdetr": RTDETRVista,
     "locate_anything": LocateAnythingWrapper,
 }
-
 
 def get_model(parameters: dict) -> object:
     model_name = parameters.get("name")

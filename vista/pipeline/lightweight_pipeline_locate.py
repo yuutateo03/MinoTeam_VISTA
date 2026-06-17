@@ -1,6 +1,7 @@
 """
 Updated Lightweight pipeline with integrated ByteTrack, Locate Anything, Buffering, and Captioning.
 Adjusted for VISTA Challenge compliance (Strict category mapping & Deep FPS optimization).
+Optimized to dynamically handle both standard COCO and VisDrone model taxonomy.
 """
 
 import logging
@@ -38,13 +39,17 @@ class LightweightPipelineLocate(VistaPipeline):
         self.locate_model = locate_model
         self.locate_prompts = locate_prompts or ["person_injured", "crashed_car", "hazardous_debris"]
         self.locate_every_n = locate_every_n
-        # Use YOLO's native class names for triggers, but output will be mapped
-        self.trigger_classes = trigger_classes or ["person", "motorcycle", "bus"]
         self.enable_profiling = enable_profiling
         self.yolo_conf = yolo_conf
         self.nms_iou_threshold = nms_iou_threshold
         self.caption_buffer_size = caption_buffer_size
         self.caption_stride = caption_stride
+
+        # Automatically map raw native trigger input names (COCO or VisDrone) to compliance targets
+        provided_triggers = trigger_classes or [
+            "person", "motorcycle", "bus", "pedestrian", "people", "van", "truck", "bicycle"
+        ]
+        self.trigger_classes = list(set(self._map_category(t) for t in provided_triggers))
 
         # Initialize the VideoCaptioner for heuristic captioning
         self.captioner = VideoCaptioner(model_name="heuristic")
@@ -67,15 +72,19 @@ class LightweightPipelineLocate(VistaPipeline):
 
     def _map_category(self, raw_name: str) -> str:
         """
-        Maps raw YOLO or Locate classes to strictly VISTA-compliant categories:
+        Maps raw COCO or VisDrone classes to strictly VISTA-compliant categories:
         'car', 'emergency_vehicle', or 'person'.
         """
         raw = raw_name.lower()
-        if "person" in raw:
+        # Handle standard COCO 'person' and VisDrone 'pedestrian'/'people' variants
+        if "person" in raw or "pedestrian" in raw or "people" in raw:
             return "person"
+
+        # Handle dedicated emergency units
         if any(ev in raw for ev in ["ambulance", "police", "fire", "emergency"]):
             return "emergency_vehicle"
-        # Defaults all other vehicles (motorcycle, bus, truck, crashed_car) to "car"
+
+        # Defaults all other vehicles (car, van, truck, bus, motorcycle, tricycle) to "car"
         return "car"
 
     def _iou(self, boxA: tuple, boxB: tuple) -> float:
@@ -88,7 +97,7 @@ class LightweightPipelineLocate(VistaPipeline):
     def _should_call_locate(self, frame_idx: int, yolo_detections: List[Detection]) -> bool:
         if self.locate_model is None: return False
         if frame_idx % self.locate_every_n == 0: return True
-        # Note: checks against the mapped categories
+        # Evaluated safely against normalized compliance categories
         return any(det.category in self.trigger_classes for det in yolo_detections)
 
     def _nms_merge(self, yolo_dets: List[Detection], locate_dets: List[Detection]) -> List[Detection]:

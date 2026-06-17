@@ -3,6 +3,7 @@
 tuning:
   # YOLO parameter search space
   yolo:
+    model: "yolo26x_visdrone.pt"
     conf: [0.01, 0.05, 0.1, 0.25]               # Base confidence thresholds
     iou: [0.3, 0.45, 0.6]                       # Non-Maximum Suppression IoU limits
 
