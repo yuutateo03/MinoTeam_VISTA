@@ -41,7 +41,7 @@ def process_video(video_path: str, output_dir: str, pipeline: VISTASolutionPipel
     global_start_time = time.time()
     window_start_time = time.time()
 
-    print(f"🎬 Processing: {video_id} | Total Frames: {total_frames} | Resolution: {width}x{height}")
+    print(f"Processing: {video_id} | Total Frames: {total_frames} | Resolution: {width}x{height}")
     print("-" * 60)
 
     for frame_idx in range(total_frames):
@@ -109,7 +109,7 @@ def process_video(video_path: str, output_dir: str, pipeline: VISTASolutionPipel
             else:
                 eta_str = "calculating..."
 
-            print(f"⏳ Progress: [{frame_idx}/{total_frames}] frames | "
+            print(f"Progress: [{frame_idx}/{total_frames}] frames | "
                   f"Window FPS: {current_fps:.2f} | "
                   f"Avg FPS: {avg_fps_sofar:.2f} | "
                   f"ETA: {eta_str}")
@@ -125,7 +125,7 @@ def process_video(video_path: str, output_dir: str, pipeline: VISTASolutionPipel
     global_end_time = time.time()
     avg_fps = total_frames / (global_end_time - global_start_time)
     print("-" * 60)
-    print(f"✅ Video '{video_id}' complete! Average End-to-End FPS: {avg_fps:.2f}\n")
+    print(f"Video '{video_id}' complete - Average End-to-End FPS: {avg_fps:.2f}\n")
 
     # ─── AGGREGATE TRACKS CAPTIONS (Majority Vote) ───
     track_records = []

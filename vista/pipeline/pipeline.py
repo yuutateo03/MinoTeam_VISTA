@@ -8,7 +8,7 @@ from transformers import CLIPProcessor, CLIPModel
 from MinoTeam_VISTA.vista.pipeline.base import VistaPipeline, FrameResult, Detection
 
 
-# ─── 1. LIGHTWEIGHT DETECTOR & TRACKER WRAPPER ────────────────────────────────
+# ─── 1. YOLO DETECTORS & TRACKER WRAPPER ────────────────────────────────
 
 class VisDroneYOLODetector:
     def __init__(self, model_path="yolo26x_visdrone.pt"):
@@ -53,21 +53,71 @@ class VisDroneYOLODetector:
 
         return detections
 
-# ─── 2. LIGHTWEIGHT CLIP "CAPTIONER" (More akin to a classifier) ────────────────────────────────
+
+class HybridDetector:
+    def __init__(self, visdrone_path="yolo26x_visdrone.pt", general_path="yolo11s.pt", min_detections=3):
+        self.visdrone = VisDroneYOLODetector(visdrone_path)
+        self.general = None
+        self.general_path = general_path
+        self.min_detections = min_detections
+
+        # COCO -> VISTA mapping for the general model
+        # COCO: 0=person, 2=car, 3=motorcycle, 5=bus, 7=truck
+        self.coco_to_vista = {
+            0: 2,   # person -> person
+            2: 0,   # car -> car
+            3: 0,   # motorcycle -> car
+            5: 0,   # bus -> car
+            7: 0,   # truck -> car
+        }
+
+    def _init_general(self):
+        if self.general is None:
+            from ultralytics import YOLO
+            import supervision as sv
+            self.device = "cuda" if torch.cuda.is_available() else "cpu"
+            print(f"Loading General YOLO Detector: {self.general_path} on {self.device}...")
+            self.general = YOLO(self.general_path).to(self.visdrone.device)
+
+    def predict(self, frame: Image.Image):
+        # 1. VisDrone detection
+        dets = self.visdrone.predict(frame)
+
+        # 2. If too few detections, run the general model
+        if len(dets) < self.min_detections:
+            self._init_general()
+            # Run general YOLO and convert to supervision Detections
+            results = self.general(frame, verbose=False)[0]
+            gen_dets = sv.Detections.from_ultralytics(results)
+
+            # Filter to relevant COCO classes and map to VISTA IDs
+            valid = [i for i, cls in enumerate(gen_dets.class_id) if cls in self.coco_to_vista]
+            if valid:
+                gen_dets = gen_dets[valid]
+                gen_dets.class_id = np.array([self.coco_to_vista[c] for c in gen_dets.class_id])
+
+                # Merge with VisDrone detections (if any)
+                if len(dets) > 0:
+                    dets = sv.Detections.merge([dets, gen_dets])
+                else:
+                    dets = gen_dets
+
+        return dets
+
+# ─── 2. CLIP STATIC CAPTIONER ────────────────────────────────
 
 class CLIPCaptioner:
-    def __init__(self, model_id="openai/clip-vit-base-patch16", score_threshold=0.2):
+    def __init__(self, model_id="openai/clip-vit-large-patch14", score_threshold=0.10):
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
         print(f"Loading CLIP on {self.device}...")
-        self.model = CLIPModel.from_pretrained(model_id).eval().to(self.device)
+        self.model = CLIPModel.from_pretrained(model_id, torch_dtype=torch.float16).eval().to(self.device)
         self.processor = CLIPProcessor.from_pretrained(model_id)
         self.threshold = score_threshold
 
         # Pre‑defined attribute lists per category (no redundant category word)
         self.attributes = {
             "car": [
-                "parked", "intact", "moving", "crashed", "overturned",
-                "damaged", "smoke", "debris"
+                "parked", "intact", "moving", "crashed", "overturned"
             ],
             "emergency_vehicle": [
                 "ambulance", "police car", "fire truck", "flashing lights", "siren"
@@ -97,7 +147,6 @@ class CLIPCaptioner:
         return emb / emb.norm(dim=-1, keepdim=True)
 
     def classify_batch(self, crops, categories):
-        """Return a comma‑separated string of up to 3 attributes per crop."""
         inputs = self.processor(images=crops, return_tensors="pt").to(self.device)
         pixel_values = inputs["pixel_values"]
         with torch.no_grad():
@@ -105,50 +154,158 @@ class CLIPCaptioner:
             image_emb = self._extract_features(img_out)
             image_emb = image_emb / image_emb.norm(dim=-1, keepdim=True)
 
+        # ---- Explicit thresholds ----
+        label_thresholds = {
+            # Person actions (optional – only if very confident)
+            "injured": 0.15,
+            "helping": 0.15,
+            "waving": 0.15,
+            "crashed": 0.15
+        }
+
+        # ---- Conflict map ----
+        conflict_map = {
+            "intact": {"crashed", "damaged", "overturned"},
+            "parked": {"crashed", "overturned", "running", "moving"},
+            "moving": {"parked", "standing", "sitting", "lying down", "crashed"},
+            "crashed": {"intact", "parked", "moving"},
+            "overturned": {"intact", "parked", "standing", "moving"},
+            "standing": {"sitting", "lying down", "running", "walking", "crouching", "injured"},
+            "lying down": {"standing", "walking", "running", "moving"},
+            "sitting": {"standing", "running", "walking", "crouching"},
+            "walking": {"sitting", "lying down", "standing", "crouching", "injured", "running"},
+            "running": {"sitting", "lying down", "standing", "crouching", "injured", "walking"},
+            "crouching": {"standing", "running", "walking", "sitting"},
+            "injured": {"helping", "standing", "walking", "running"},
+            "helping": {"injured"},
+        }
+
+        # ---- Emergency vehicle types (ONLY these three) ----
+        emergency_type_labels = {"ambulance", "police car", "fire truck"}
+        # Threshold for deciding to reclassify as emergency_vehicle
+        EMERGENCY_DETECTION_THRESHOLD = 0.15  # Adjust as needed
+
         results = []
-        for emb, cat in zip(image_emb, categories):
+
+        for idx, (emb, cat) in enumerate(zip(image_emb, categories)):
+            # Safety check
             if cat not in self.text_embeds:
                 results.append("intact")
                 continue
 
-            text_emb = self.text_embeds[cat]          # (num_texts, dim)
-            scores = (emb @ text_emb.T).squeeze(0)    # (num_texts,)
+            original_cat = cat  # Keep for embedding retrieval
+            text_emb = self.text_embeds[original_cat]
+            scores = (emb @ text_emb.T).squeeze(0)
+            all_labels = self.attributes[original_cat]
+            cat_lower = original_cat.lower()
 
-            # Select labels above threshold
-            indices = (scores > self.threshold).nonzero(as_tuple=False).squeeze(-1)
-            if indices.numel() == 0:
-                # fallback: take the highest single label
-                best_idx = scores.argmax().item()
-                selected = [self.attributes[cat][best_idx]]
-            else:
-                sorted_indices = indices[(-scores[indices]).argsort()].tolist()
-                selected = [self.attributes[cat][i] for i in sorted_indices[:3]]
+            # -------- DETECT EMERGENCY VEHICLE --------
+            is_emergency = False
+            mandatory_type_idx = None
 
-                # ─── Improved contradiction solver (primary label as anchor) ───
-                contradictions = {
-                    "intact": ["crashed", "damaged", "overturned", "smoke"],
-                    "parked": ["crashed", "overturned", "running", "moving"],
-                    "moving": ["parked", "standing", "sitting", "lying down"],
-                    "crashed": ["intact", "parked", "moving"],
-                    "overturned": ["intact", "parked", "standing", "moving"],
-                    "standing": ["sitting", "lying down", "running", "walking", "moving"],
-                    "lying down": ["standing", "walking", "running", "moving"],
-                    "sitting": ["standing", "running", "walking", "moving"],
-                    "walking": ["sitting", "lying down", "standing", "parked"],
-                    "running": ["sitting", "lying down", "standing", "parked"],
-                    "injured": ["helping"],
-                    "helping": ["injured"],
-                }
+            # Find the best emergency type label and its score
+            emergency_candidates = []
+            for i, lbl in enumerate(all_labels):
+                if lbl.lower() in emergency_type_labels:
+                    emergency_candidates.append((i, scores[i]))
 
-                if len(selected) > 1:
-                    primary = selected[0].lower()
-                    if primary in contradictions:
-                        forbidden = contradictions[primary]
-                        selected = [selected[0]] + [
-                            s for s in selected[1:] if s.lower() not in forbidden
-                        ]
+            if emergency_candidates:
+                # Sort by score descending
+                emergency_candidates.sort(key=lambda x: x[1], reverse=True)
+                best_idx, best_score = emergency_candidates[0]
+                if best_score > EMERGENCY_DETECTION_THRESHOLD:
+                    is_emergency = True
+                    mandatory_type_idx = best_idx
+                    # ---- Update the object's class in the input list ----
+                    categories[idx] = "emergency_vehicle"
+                    # We'll keep original_cat for embedding lookups
 
-            results.append(", ".join(selected))
+            # -------- 1. Define tier keywords (based on original category) --------
+            if cat_lower in ["person", "people", "human", "pedestrian"]:
+                tier1_keys = {"walking", "crouching", "lying down", "running", "standing"}
+                tier2_keys = {"helping", "waving", "injured"}
+            else:  # All vehicles (including regular and now emergency)
+                tier1_keys = {"parked", "moving"}
+                tier2_keys = {"crashed", "intact"}
+
+            tier1_indices = [i for i, lbl in enumerate(all_labels) if lbl in tier1_keys]
+            tier2_indices = [i for i, lbl in enumerate(all_labels) if lbl in tier2_keys]
+            tier3_indices = [
+                i for i, lbl in enumerate(all_labels)
+                if i not in tier1_indices and i not in tier2_indices
+            ]
+
+            # -------- 2. Candidates that pass their thresholds --------
+            candidate_indices = []
+            for i, label in enumerate(all_labels):
+                thresh = label_thresholds.get(label, self.threshold)
+                if scores[i] > thresh:
+                    candidate_indices.append(i)
+
+            candidate_indices.sort(key=lambda i: scores[i], reverse=True)
+
+            # -------- 3. Fallback --------
+            if not candidate_indices:
+                best_idx = max(range(len(scores)), key=lambda i: scores[i])
+                results.append(all_labels[best_idx])
+                continue
+
+            tier1_cands = [i for i in candidate_indices if i in tier1_indices]
+            tier2_cands = [i for i in candidate_indices if i in tier2_indices]
+            tier3_cands = [i for i in candidate_indices if i in tier3_indices]
+
+            # -------- 4. Greedy selection --------
+            kept_indices = []
+
+            # --- Tier 1 ---
+            if tier1_cands:
+                kept_indices.append(tier1_cands[0])
+
+            # --- Tier 2 ---
+            if tier2_cands:
+                for i in tier2_cands:
+                    label = all_labels[i]
+                    conflicts = conflict_map.get(label.lower(), set())
+                    if not any(all_labels[k].lower() in conflicts for k in kept_indices):
+                        kept_indices.append(i)
+                        break
+
+            # --- Tier 3 (multiple labels allowed, up to 3 total) ---
+            # If emergency, force-add the mandatory type to the front of Tier 3 candidates
+            if is_emergency and mandatory_type_idx is not None:
+                if mandatory_type_idx not in kept_indices:
+                    # Ensure it's in tier3_cands (if not, add it)
+                    if mandatory_type_idx in tier3_cands:
+                        tier3_cands.remove(mandatory_type_idx)
+                    # Insert at front
+                    tier3_cands.insert(0, mandatory_type_idx)
+
+            if tier3_cands and len(kept_indices) < 3:
+                for i in tier3_cands:
+                    label = all_labels[i]
+                    conflicts = conflict_map.get(label.lower(), set())
+                    if any(all_labels[k].lower() in conflicts for k in kept_indices):
+                        continue
+
+                    # If this is the mandatory emergency type, add unconditionally
+                    if is_emergency and i == mandatory_type_idx:
+                        kept_indices.append(i)
+                    else:
+                        # Regular Tier 3 label: only add if it meets its threshold
+                        thresh = label_thresholds.get(label, self.threshold)
+                        if scores[i] > thresh:
+                            kept_indices.append(i)
+
+                    if len(kept_indices) >= 3:
+                        break
+
+            # -------- 5. Safety fallback --------
+            if not kept_indices:
+                kept_indices.append(candidate_indices[0])
+
+            final_labels = [all_labels[i] for i in kept_indices]
+            results.append(", ".join(final_labels))
+
         return results
 
 
@@ -158,10 +315,14 @@ class VISTASolutionPipeline(VistaPipeline):
     def __init__(self, yolo_model_path="yolo26x_visdrone.pt", caption_stride=30):
         super().__init__()
         # Initialize Detector & Tracker
-        self.detector = VisDroneYOLODetector(model_path=yolo_model_path)
+        self.detector = HybridDetector(
+            visdrone_path=yolo_model_path,
+            general_path="yolo11s.pt",
+            min_detections=3  # switch to general model when VisDrone finds < 3 objects
+        )
         self.tracker = sv.ByteTrack()
 
-        # CLIP‑based captioner (lightweight, controllable)
+        # CLIP‑based captioner
         self.vlm = CLIPCaptioner(score_threshold=0.2)
 
         # Caption stride for deep semantic updates
