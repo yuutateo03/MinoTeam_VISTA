@@ -189,7 +189,7 @@ def run_evaluation(input_source: str, output_dir: str):
 
 if __name__ == "__main__":
     # Path to a single video OR a folder containing multiple videos
-    INPUT_PATH = r"C:\Users\yurit\GitHub\cs_1st_year\2nd Semester\CV\Project\MinoTeam_VISTA\data\VISTADataset\test\20251210\DJI_20251210134636_0001_S.mp4"
-    OUTPUT_DIR = r"C:\Users\yurit\GitHub\cs_1st_year\2nd Semester\CV\Project\MinoTeam_VISTA\vista\pipeline\out"
+    INPUT_PATH = r"C:\Users\yurit\GitHub\cs_1st_year\2nd Semester\CV\Project\MinoTeam_VISTA\data\VISTADataset\test\20251217\DJI_20251217114349_0001_S.mp4"
+    OUTPUT_DIR = r"C:\Users\yurit\GitHub\cs_1st_year\2nd Semester\CV\Project\MinoTeam_VISTA\vista\pipeline\out\DJI_20251217114349_0001_S"
 
     run_evaluation(INPUT_PATH, OUTPUT_DIR)

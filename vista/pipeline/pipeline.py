@@ -114,18 +114,95 @@ class CLIPCaptioner:
         self.processor = CLIPProcessor.from_pretrained(model_id)
         self.threshold = score_threshold
 
-        # Pre‑defined attribute lists per category (no redundant category word)
+        # 2. Define the label prompts dictionary
+        self.label_prompts = {
+            # --- Vehicles ---
+            "intact": "an aerial top-down view of a perfectly intact, undamaged car",
+            "parked": "an aerial top-down view of a car parked normally in a parking spot or on the side of the street",
+            "stopped": "an aerial top-down view of a car stopped on the road",
+            "moving": "an aerial top-down view of a car driving and moving quickly on the road",
+            "crashed": "an aerial top-down view of a badly crashed, damaged car in a traffic accident",
+            "damaged": "an aerial top-down view of a car with visible damage or dents",
+            "overturned": "an aerial top-down view of a crashed car that is completely overturned and flipped upside down",
+
+            # --- Emergency Vehicles ---
+            "ambulance": "an aerial top-down view of a white ambulance emergency vehicle",
+            "police car": "an aerial top-down view of a police car with police markings",
+            "fire truck": "an aerial top-down view of a large red fire truck",
+            "lights on": "an aerial top-down view of an emergency vehicle with bright flashing emergency lights on",
+            "siren": "an aerial top-down view of an emergency vehicle responding to an emergency",
+
+            # --- Persons ---
+            "standing": "an aerial view of a person standing completely still",
+            "sitting": "an aerial view of a person resting and sitting down",
+            "lying down": "an aerial view of a person lying down flat on the ground",
+            "walking": "an aerial view of a person walking down the street",
+            "running": "an aerial view of a person running quickly",
+            "crouching": "an aerial view of a person crouching or kneeling on the ground",
+            "injured": "an aerial view of a badly injured person lying helplessly on the ground after an accident",
+            "helping": "an aerial view of a person bending over and helping another person on the ground",
+            "waving": "an aerial view of a person waving their arms in the air to get attention",
+            "resting": "an aerial view of a person taking a rest"
+        }
+
         self.attributes = {
-            "car": [
-                "parked", "intact", "moving", "crashed", "overturned"
-            ],
-            "emergency_vehicle": [
-                "ambulance", "police car", "fire truck", "flashing lights", "siren"
-            ],
-            "person": [
-                "standing", "walking", "running", "sitting", "lying down",
-                "injured", "helping", "waving", "crouching"
-            ]
+            "car": ["moving", "stopped", "parked", "intact", "crashed", "damaged", "overturned"],
+            "emergency_vehicle": ["moving", "stopped", "parked", "intact", "crashed", "damaged", "overturned",
+                                  "ambulance", "police car", "fire truck", "lights on", "siren"],
+            "person": ["standing", "walking", "running", "sitting", "lying down", "crouching", "injured", "helping",
+                       "waving", "resting"]
+        }
+
+        # 3. Generate and store Text Embeddings directly during initialization
+        self.text_embeds = {}
+        self.model.eval()  # Ensure model is in eval mode
+
+        with torch.no_grad():
+            for category, labels in self.attributes.items():
+                # Fetch the descriptive sentence for each short label
+                sentences = [self.label_prompts.get(lbl, f"a photo of a {lbl}") for lbl in labels]
+
+                # Tokenize the sentences
+                inputs = self.processor(text=sentences, return_tensors="pt", padding=True).to(self.device)
+
+                # Generate embeddings
+                raw_out = self.model.get_text_features(**inputs)
+                text_features = self._extract_features(raw_out)
+
+                # Normalize the raw tensor
+                text_features = text_features / text_features.norm(dim=-1, keepdim=True)
+
+                # Normalize
+                text_features = text_features / text_features.norm(dim=-1, keepdim=True)
+
+                # Store them
+                self.text_embeds[category] = text_features
+
+        # 4. Static Configuration Maps (Moved out of classify_batch for performance)
+        self.label_thresholds = {
+            "injured": 0.22,
+            "helping": 0.25,
+            "waving": 0.25,
+            "crashed": 0.24,
+            "damaged": 0.24,
+            "overturned": 0.26
+        }
+
+        self.conflict_map = {
+            "intact": {"crashed", "damaged", "overturned"},
+            "parked": {"crashed", "overturned", "running", "moving"},
+            "stopped": {"moving", "running", "walking"},
+            "moving": {"parked", "stopped", "standing", "sitting", "lying down", "crashed"},
+            "crashed": {"intact", "parked", "moving"},
+            "overturned": {"intact", "parked", "standing", "moving"},
+            "standing": {"sitting", "lying down", "running", "walking", "crouching", "injured"},
+            "lying down": {"standing", "walking", "running", "moving"},
+            "sitting": {"standing", "running", "walking", "crouching"},
+            "walking": {"sitting", "lying down", "standing", "crouching", "injured", "running"},
+            "running": {"sitting", "lying down", "standing", "crouching", "injured", "walking"},
+            "crouching": {"standing", "running", "walking", "sitting"},
+            "injured": {"helping", "standing", "walking", "running"},
+            "helping": {"injured"},
         }
 
         # Pre‑compute text embeddings for all labels
@@ -154,36 +231,10 @@ class CLIPCaptioner:
             image_emb = self._extract_features(img_out)
             image_emb = image_emb / image_emb.norm(dim=-1, keepdim=True)
 
-        # ---- Explicit thresholds ----
-        label_thresholds = {
-            # Person actions (optional – only if very confident)
-            "injured": 0.15,
-            "helping": 0.15,
-            "waving": 0.15,
-            "crashed": 0.15
-        }
-
-        # ---- Conflict map ----
-        conflict_map = {
-            "intact": {"crashed", "damaged", "overturned"},
-            "parked": {"crashed", "overturned", "running", "moving"},
-            "moving": {"parked", "standing", "sitting", "lying down", "crashed"},
-            "crashed": {"intact", "parked", "moving"},
-            "overturned": {"intact", "parked", "standing", "moving"},
-            "standing": {"sitting", "lying down", "running", "walking", "crouching", "injured"},
-            "lying down": {"standing", "walking", "running", "moving"},
-            "sitting": {"standing", "running", "walking", "crouching"},
-            "walking": {"sitting", "lying down", "standing", "crouching", "injured", "running"},
-            "running": {"sitting", "lying down", "standing", "crouching", "injured", "walking"},
-            "crouching": {"standing", "running", "walking", "sitting"},
-            "injured": {"helping", "standing", "walking", "running"},
-            "helping": {"injured"},
-        }
-
         # ---- Emergency vehicle types (ONLY these three) ----
         emergency_type_labels = {"ambulance", "police car", "fire truck"}
         # Threshold for deciding to reclassify as emergency_vehicle
-        EMERGENCY_DETECTION_THRESHOLD = 0.15  # Adjust as needed
+        EMERGENCY_DETECTION_THRESHOLD = 0.10  # Adjust as needed
 
         results = []
 
@@ -238,7 +289,7 @@ class CLIPCaptioner:
             # -------- 2. Candidates that pass their thresholds --------
             candidate_indices = []
             for i, label in enumerate(all_labels):
-                thresh = label_thresholds.get(label, self.threshold)
+                thresh = self.label_thresholds.get(label, self.threshold)
                 if scores[i] > thresh:
                     candidate_indices.append(i)
 
@@ -261,11 +312,11 @@ class CLIPCaptioner:
             if tier1_cands:
                 kept_indices.append(tier1_cands[0])
 
-            # --- Tier 2 ---
+            # --- Tier 2 (optional for persons) ---
             if tier2_cands:
                 for i in tier2_cands:
                     label = all_labels[i]
-                    conflicts = conflict_map.get(label.lower(), set())
+                    conflicts = self.conflict_map.get(label.lower(), set())
                     if not any(all_labels[k].lower() in conflicts for k in kept_indices):
                         kept_indices.append(i)
                         break
@@ -277,13 +328,13 @@ class CLIPCaptioner:
                     # Ensure it's in tier3_cands (if not, add it)
                     if mandatory_type_idx in tier3_cands:
                         tier3_cands.remove(mandatory_type_idx)
-                    # Insert at front
+                    # Insert at front (it will be added regardless of threshold)
                     tier3_cands.insert(0, mandatory_type_idx)
 
             if tier3_cands and len(kept_indices) < 3:
                 for i in tier3_cands:
                     label = all_labels[i]
-                    conflicts = conflict_map.get(label.lower(), set())
+                    conflicts = self.conflict_map.get(label.lower(), set())
                     if any(all_labels[k].lower() in conflicts for k in kept_indices):
                         continue
 
@@ -292,7 +343,7 @@ class CLIPCaptioner:
                         kept_indices.append(i)
                     else:
                         # Regular Tier 3 label: only add if it meets its threshold
-                        thresh = label_thresholds.get(label, self.threshold)
+                        thresh = self.label_thresholds.get(label, self.threshold)
                         if scores[i] > thresh:
                             kept_indices.append(i)
 
