@@ -4,7 +4,6 @@ from PIL import Image
 import supervision as sv
 from transformers import CLIPProcessor, CLIPModel
 
-# Import base classes from your competition framework
 from MinoTeam_VISTA.vista.pipeline.base import VistaPipeline, FrameResult, Detection
 
 
@@ -231,10 +230,10 @@ class CLIPCaptioner:
             image_emb = self._extract_features(img_out)
             image_emb = image_emb / image_emb.norm(dim=-1, keepdim=True)
 
-        # ---- Emergency vehicle types (ONLY these three) ----
+        # ---- Emergency vehicle types ----
         emergency_type_labels = {"ambulance", "police car", "fire truck"}
         # Threshold for deciding to reclassify as emergency_vehicle
-        EMERGENCY_DETECTION_THRESHOLD = 0.10  # Adjust as needed
+        EMERGENCY_DETECTION_THRESHOLD = 0.10
 
         results = []
 
@@ -244,7 +243,7 @@ class CLIPCaptioner:
                 results.append("intact")
                 continue
 
-            original_cat = cat  # Keep for embedding retrieval
+            original_cat = cat
             text_emb = self.text_embeds[original_cat]
             scores = (emb @ text_emb.T).squeeze(0)
             all_labels = self.attributes[original_cat]
@@ -269,7 +268,6 @@ class CLIPCaptioner:
                     mandatory_type_idx = best_idx
                     # ---- Update the object's class in the input list ----
                     categories[idx] = "emergency_vehicle"
-                    # We'll keep original_cat for embedding lookups
 
             # -------- 1. Define tier keywords (based on original category) --------
             if cat_lower in ["person", "people", "human", "pedestrian"]:
@@ -312,7 +310,7 @@ class CLIPCaptioner:
             if tier1_cands:
                 kept_indices.append(tier1_cands[0])
 
-            # --- Tier 2 (optional for persons) ---
+            # --- Tier 2 ---
             if tier2_cands:
                 for i in tier2_cands:
                     label = all_labels[i]
@@ -328,7 +326,7 @@ class CLIPCaptioner:
                     # Ensure it's in tier3_cands (if not, add it)
                     if mandatory_type_idx in tier3_cands:
                         tier3_cands.remove(mandatory_type_idx)
-                    # Insert at front (it will be added regardless of threshold)
+                    # Insert at front (added regardless of threshold)
                     tier3_cands.insert(0, mandatory_type_idx)
 
             if tier3_cands and len(kept_indices) < 3:
@@ -369,14 +367,14 @@ class VISTASolutionPipeline(VistaPipeline):
         self.detector = HybridDetector(
             visdrone_path=yolo_model_path,
             general_path="yolo11s.pt",
-            min_detections=3  # switch to general model when VisDrone finds < 3 objects
+            min_detections=3  # switch to general model when YOLOVisDrone finds < 3 objects
         )
         self.tracker = sv.ByteTrack()
 
         # CLIP‑based captioner
         self.vlm = CLIPCaptioner(score_threshold=0.2)
 
-        # Caption stride for deep semantic updates
+        # Caption stride for updates
         self.caption_stride = caption_stride
 
         # Persistent state across frames
